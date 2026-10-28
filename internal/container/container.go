@@ -2043,7 +2043,7 @@ func registerWebSearchProviders(registry *infra_web_search.Registry) {
 // registerIMService registers adapter factories, loads enabled channels, and
 // wires the process-lifetime shutdown hook. Each platform's factory lives in
 // its own subpackage to keep this file focused on wiring.
-func registerIMService(imService *imPkg.Service, cleaner interfaces.ResourceCleaner) {
+func registerIMService(imService *imPkg.Service, cleaner interfaces.ResourceCleaner, waStore *whatsapp.Store) {
 	imService.RegisterAdapterFactory("wecom", wecom.NewFactory())
 	imService.RegisterAdapterFactory("feishu", feishu.NewFactory(feishu.RegionFeishu))
 	// Lark is Feishu's international cloud: same adapter, different host/tenant.
@@ -2055,6 +2055,7 @@ func registerIMService(imService *imPkg.Service, cleaner interfaces.ResourceClea
 	imService.RegisterAdapterFactory("wechat", wechat.NewFactory())
 	imService.RegisterAdapterFactory("qqbot", qqbot.NewFactory())
 	imService.RegisterAdapterFactory("yunzhijia", yunzhijia.NewFactory())
+	imService.RegisterAdapterFactory("whatsapp", whatsapp.NewFactory(waStore))
 
 	// Load and start all enabled channels from database
 	if err := imService.LoadAndStartChannels(); err != nil {

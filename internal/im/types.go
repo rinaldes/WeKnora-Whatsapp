@@ -220,6 +220,16 @@ func (ch *IMChannel) computeBotIdentity() string {
 		if botID := str("ilink_bot_id"); botID != "" {
 			return "wechat:" + botID
 		}
+	case "whatsapp":
+		// device_jid is "<number>:<device>@s.whatsapp.net"; the number alone
+		// identifies the bot account across re-pairings.
+		if jid := str("device_jid"); jid != "" {
+			user, _, _ := strings.Cut(jid, "@")
+			user, _, _ = strings.Cut(user, ":")
+			if user != "" {
+				return "whatsapp:" + user
+			}
+		}
 	case "qqbot":
 		if appID := str("app_id"); appID != "" {
 			return "qqbot:" + appID

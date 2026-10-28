@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/im"
+	"github.com/Tencent/WeKnora/internal/im/whatsapp"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,7 @@ import (
 // validIMPlatforms is the set of supported IM platforms.
 var validIMPlatforms = map[string]bool{
 	"wecom": true, "feishu": true, "lark": true, "slack": true, "telegram": true, "dingtalk": true,
-	"mattermost": true, "wechat": true, "qqbot": true, "yunzhijia": true,
+	"mattermost": true, "wechat": true, "qqbot": true, "yunzhijia": true, "whatsapp": true,
 }
 
 // invalidIMPlatformError is the 400 message listing the accepted platforms. It
@@ -85,6 +86,16 @@ func (h *IMHandler) CreateIMChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.Platform == "whatsapp" {
+		creds, err := normalizeWhatsAppCredentials(req.Credentials)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		req.Credentials = creds
+		// WhatsApp never saves files to a knowledge base.
+		req.KnowledgeBaseID = ""
+	}
 
 	channel := &im.IMChannel{
 		TenantID:    tenantID,
@@ -115,6 +126,8 @@ func (h *IMHandler) CreateIMChannel(c *gin.Context) {
 	if req.Platform == "wechat" {
 		channel.Mode = "longpoll"
 		channel.OutputMode = "full"
+	} else if req.Platform == "whatsapp" {
+		forceWhatsAppChannelSettings(channel)
 	} else {
 		if channel.Mode == "" {
 			if channel.Platform == "mattermost" || channel.Platform == "yunzhijia" {
@@ -257,7 +270,7 @@ func (h *IMHandler) UpdateIMChannel(c *gin.Context) {
 	if req.SessionMode != nil {
 		channel.SessionMode = *req.SessionMode
 	}
-	if req.KnowledgeBaseID != nil {
+	if req.KnowledgeBaseID != nil && channel.Platform != "whatsapp" {
 		ctx := c.Request.Context()
 		if err := h.imService.SetChannelKnowledgeBaseID(ctx, channel, *req.KnowledgeBaseID); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "knowledge base not found"})
@@ -265,7 +278,18 @@ func (h *IMHandler) UpdateIMChannel(c *gin.Context) {
 		}
 	}
 	if req.Credentials != nil {
+		if channel.Platform == "whatsapp" {
+			creds, err := normalizeWhatsAppCredentials(req.Credentials)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			req.Credentials = creds
+		}
 		channel.Credentials = req.Credentials
+	}
+	if channel.Platform == "whatsapp" {
+		forceWhatsAppChannelSettings(channel)
 	}
 	if req.Enabled != nil {
 		channel.Enabled = *req.Enabled
@@ -292,6 +316,30 @@ func (h *IMHandler) UpdateIMChannel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": channel})
+}
+
+// normalizeWhatsAppCredentials normalises phone numbers and rejects a
+// channel that is unpaired or would answer nobody.
+func normalizeWhatsAppCredentials(raw types.JSON) (types.JSON, error) {
+	creds, err := whatsapp.ParseCredentials(raw)
+	if err != nil {
+		return nil, err
+	}
+	creds.Normalize()
+	if err := creds.Validate(); err != nil {
+		return nil, err
+	}
+	return types.JSON(creds.JSON()), nil
+}
+
+// forceWhatsAppChannelSettings pins the settings WhatsApp supports: one
+// persistent connection, one final message per answer, a session per sender
+// and no knowledge-base saves. Applied on create and on every update.
+func forceWhatsAppChannelSettings(channel *im.IMChannel) {
+	channel.Mode = "websocket"
+	channel.OutputMode = "full"
+	channel.SessionMode = string(im.SessionModeUser)
+	channel.KnowledgeBaseID = ""
 }
 
 func normalizeIMLocale(locale string) (string, error) {
@@ -437,7 +485,8 @@ func (h *IMHandler) IMCallback(c *gin.Context) {
 		defaultMode = "webhook"
 	}
 	if im.ResolveMode(channel, defaultMode) != "webhook" ||
-		channel.Platform == "qqbot" || channel.Platform == "wechat" || channel.Platform == "dingtalk" {
+		channel.Platform == "qqbot" || channel.Platform == "wechat" || channel.Platform == "dingtalk" ||
+		channel.Platform == "whatsapp" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "HTTP callbacks are disabled for this channel"})
 		return
 	}

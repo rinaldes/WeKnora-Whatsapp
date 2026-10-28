@@ -23,6 +23,7 @@ const (
 	PlatformWeChat     Platform = "wechat"
 	PlatformQQBot      Platform = "qqbot"
 	PlatformYunzhijia  Platform = "yunzhijia"
+	PlatformWhatsApp   Platform = "whatsapp"
 )
 
 // SessionMode determines how IM sessions are resolved.
