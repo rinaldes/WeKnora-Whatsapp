@@ -12,6 +12,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/im"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/gin-gonic/gin"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
@@ -89,12 +90,14 @@ func (a *Adapter) SendReply(ctx context.Context, incoming *im.IncomingMessage, r
 	return nil
 }
 
-// send delivers one message, retrying once on failure.
+// send delivers one message, retrying once on failure. Both attempts use the
+// same message ID, so a send that timed out but arrived isn't duplicated.
 func (a *Adapter) send(ctx context.Context, chat types.JID, msg *waE2E.Message) error {
+	extra := whatsmeow.SendRequestExtra{ID: a.client.GenerateMessageID()}
 	var err error
 	for attempt := 0; attempt < 2; attempt++ {
 		sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
-		_, err = a.client.SendMessage(sendCtx, chat, msg)
+		_, err = a.client.SendMessage(sendCtx, chat, msg, extra)
 		cancel()
 		if err == nil {
 			return nil

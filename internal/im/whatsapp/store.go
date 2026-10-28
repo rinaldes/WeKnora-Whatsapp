@@ -48,11 +48,6 @@ func (s *Store) Container(ctx context.Context) (*sqlstore.Container, error) {
 	return s.c, s.initErr
 }
 
-// DB returns the gorm handle the store was built on.
-func (s *Store) DB() *gorm.DB {
-	return s.db
-}
-
 func (s *Store) open(ctx context.Context) (*sqlstore.Container, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("whatsapp store: no database")

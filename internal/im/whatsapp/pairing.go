@@ -99,7 +99,7 @@ type PairingManager struct {
 
 // NewPairingManager returns a manager that creates devices in store.
 func NewPairingManager(s *Store) *PairingManager {
-	m := newPairingManager(s, func(ctx context.Context) (pairClient, error) {
+	return newPairingManager(s, func(ctx context.Context) (pairClient, error) {
 		c, err := s.Container(ctx)
 		if err != nil {
 			return nil, err
@@ -107,7 +107,6 @@ func NewPairingManager(s *Store) *PairingManager {
 		device := c.NewDevice()
 		return &whatsmeowPairClient{Client: whatsmeow.NewClient(device, newWALogger("pair")), device: device}, nil
 	})
-	return m
 }
 
 func newPairingManager(s *Store, newClient func(ctx context.Context) (pairClient, error)) *PairingManager {
@@ -211,12 +210,6 @@ func (m *PairingManager) Status(id string) (PairingResult, bool) {
 		return PairingResult{}, false
 	}
 	return p.get(), true
-}
-
-// RecentDeviceJIDs lists devices paired in the last recentPairingTTL; their
-// channel may not be saved yet, so device cleanup must keep them.
-func (m *PairingManager) RecentDeviceJIDs() []string {
-	return m.store.RecentlyPaired()
 }
 
 func (m *PairingManager) pruneLocked() {

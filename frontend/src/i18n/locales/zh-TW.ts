@@ -1717,7 +1717,6 @@ export default {
       whatsappHint: '只有這些號碼會收到回覆，其他人一律忽略。請為機器人使用專用號碼。傳送給機器人的檔案僅用於該次回答，不會儲存到知識庫。',
       whatsappNeedsPairing: '請先連結 WhatsApp 帳號',
       whatsappNeedsAllowlist: '請填寫擁有者號碼或至少一個允許的號碼',
-      whatsappNeedsRepairing: '需要重新連結',
       sectionChannel: '通路資訊',
       sectionConnection: '連結設定',
       sectionCredentials: '平台憑證',

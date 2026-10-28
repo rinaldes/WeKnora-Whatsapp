@@ -8015,7 +8015,6 @@ export default {
       whatsappHint: '返信するのはこれらの番号だけで、それ以外は無視されます。ボットには専用の番号を使ってください。ボットに送られたファイルはその回答にのみ使われ、ナレッジベースには保存されません。',
       whatsappNeedsPairing: '先に WhatsApp アカウントをリンクしてください',
       whatsappNeedsAllowlist: 'オーナーの番号か、許可する番号を 1 つ以上入力してください',
-      whatsappNeedsRepairing: '再リンクが必要です',
       sectionChannel: 'チャネル情報',
       sectionConnection: '接続',
       sectionCredentials: 'プラットフォームの認証情報',

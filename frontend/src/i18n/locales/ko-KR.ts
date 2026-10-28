@@ -1715,7 +1715,6 @@ export default {
       whatsappHint: '이 번호들만 답장을 받고 그 외에는 무시됩니다. 봇에는 전용 번호를 사용하세요. 봇에 보낸 파일은 해당 답변에만 쓰이며 지식 베이스에 저장되지 않습니다.',
       whatsappNeedsPairing: '먼저 WhatsApp 계정을 연결하세요',
       whatsappNeedsAllowlist: '소유자 번호 또는 허용된 번호를 하나 이상 입력하세요',
-      whatsappNeedsRepairing: '다시 연결 필요',
       sectionChannel: '채널 정보',
       sectionConnection: '연결 설정',
       sectionCredentials: '플랫폼 자격 증명',

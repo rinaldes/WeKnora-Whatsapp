@@ -23,11 +23,11 @@ const (
 	logoutConnectTimeout = 20 * time.Second
 )
 
-// Sweep logs out and deletes devices that no live WhatsApp channel
+// sweep logs out and deletes devices that no live WhatsApp channel
 // references, except those in keep (paired but not saved to a channel yet).
 // Core has no delete hook for adapters, so this is how deleted channels,
 // rebinds (the old device) and abandoned pairings get unlinked.
-func Sweep(ctx context.Context, s *Store, keep []string) error {
+func (s *Store) sweep(ctx context.Context, keep []string) error {
 	if s.db == nil {
 		return nil
 	}
@@ -84,7 +84,7 @@ func referencedDevices(ctx context.Context, s *Store) (map[string]bool, error) {
 	return out, nil
 }
 
-// startSweeping runs Sweep every sweepInterval for the life of the process.
+// startSweeping runs a sweep every sweepInterval for the life of the process.
 // Safe to call repeatedly; only the first call starts the loop.
 func (s *Store) startSweeping() {
 	if s.db == nil {
@@ -105,7 +105,7 @@ func (s *Store) startSweeping() {
 func (s *Store) sweepNow() {
 	ctx, cancel := context.WithTimeout(context.Background(), sweepTimeout)
 	defer cancel()
-	if err := Sweep(ctx, s, s.RecentlyPaired()); err != nil {
+	if err := s.sweep(ctx, s.RecentlyPaired()); err != nil {
 		logger.Warnf(ctx, "[WhatsApp] Device sweep: %v", err)
 	}
 }

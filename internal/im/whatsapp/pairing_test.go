@@ -157,8 +157,8 @@ func TestPairingSuccess(t *testing.T) {
 	if d, del := c.counts(); d == 0 || del != 0 {
 		t.Fatalf("disconnects=%d deletes=%d, want >0 and 0", d, del)
 	}
-	if got := m.RecentDeviceJIDs(); len(got) != 1 || got[0] != res.DeviceJID {
-		t.Fatalf("RecentDeviceJIDs() = %v", got)
+	if got := m.store.RecentlyPaired(); len(got) != 1 || got[0] != res.DeviceJID {
+		t.Fatalf("RecentlyPaired() = %v", got)
 	}
 }
 
@@ -177,7 +177,7 @@ func TestPairingTimeoutDeletesDevice(t *testing.T) {
 	if d, del := c.counts(); d == 0 || del != 1 {
 		t.Fatalf("disconnects=%d deletes=%d, want >0 and 1", d, del)
 	}
-	if len(m.RecentDeviceJIDs()) != 0 {
+	if len(m.store.RecentlyPaired()) != 0 {
 		t.Fatal("timed out pairing must not be recent")
 	}
 }

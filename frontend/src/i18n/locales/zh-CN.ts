@@ -1717,7 +1717,6 @@ export default {
       whatsappHint: '只有这些号码会收到回复，其他人一律忽略。请为机器人使用专用号码。发送给机器人的文件仅用于本次回答，不会保存到知识库。',
       whatsappNeedsPairing: '请先关联 WhatsApp 账号',
       whatsappNeedsAllowlist: '请填写所有者号码或至少一个允许的号码',
-      whatsappNeedsRepairing: '需要重新关联',
       sectionChannel: '渠道信息',
       sectionConnection: '连接设置',
       sectionCredentials: '平台凭证',

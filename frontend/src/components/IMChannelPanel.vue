@@ -807,7 +807,7 @@ let wechatPollActive = false;
 let wechatPollTimer: ReturnType<typeof setTimeout> | null = null;
 
 // WhatsApp QR pairing state
-const whatsappPairingId = ref('');
+let whatsappPairingId = '';
 const whatsappQR = ref('');  // text to render as a QR code; rotates while pending
 const whatsappQRStatus = ref<'active' | 'expired' | 'loading'>('active');
 const whatsappLoading = ref(false);
@@ -1047,7 +1047,7 @@ async function startWhatsAppPairingFlow() {
   whatsappQRStatus.value = 'loading';
   try {
     const res = await startWhatsAppPairing();
-    whatsappPairingId.value = res.data.pairing_id;
+    whatsappPairingId = res.data.pairing_id;
     whatsappQR.value = res.data.qr_code || '';
     whatsappQRStatus.value = 'active';
     whatsappPollActive = true;
@@ -1063,7 +1063,7 @@ async function startWhatsAppPairingFlow() {
 async function pollWhatsAppOnce() {
   if (!whatsappPollActive) return;
   try {
-    const res = await pollWhatsAppPairing(whatsappPairingId.value);
+    const res = await pollWhatsAppPairing(whatsappPairingId);
     if (!whatsappPollActive) return;
     const data = res.data;
     if (data.status === 'success' && data.device_jid) {
@@ -1099,7 +1099,7 @@ function stopWhatsAppPolling() {
 
 function resetWhatsAppPairing() {
   stopWhatsAppPolling();
-  whatsappPairingId.value = '';
+  whatsappPairingId = '';
   whatsappQR.value = '';
   whatsappQRStatus.value = 'active';
 }

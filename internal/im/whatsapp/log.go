@@ -9,21 +9,16 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-// debugEnabled reports whether whatsmeow debug/info logs are forwarded.
-// Off by default: whatsmeow is chatty and logs protocol details.
-func debugEnabled() bool {
-	return os.Getenv("WHATSAPP_DEBUG") == "1"
-}
-
 // waLogger bridges whatsmeow's logger onto WeKnora's logger. Warnings and
-// errors always pass through; info and debug only when WHATSAPP_DEBUG=1.
+// errors always pass through; info and debug only when WHATSAPP_DEBUG=1,
+// since whatsmeow is chatty and logs protocol details.
 type waLogger struct {
 	module string
 	debug  bool
 }
 
 func newWALogger(module string) waLog.Logger {
-	return &waLogger{module: module, debug: debugEnabled()}
+	return &waLogger{module: module, debug: os.Getenv("WHATSAPP_DEBUG") == "1"}
 }
 
 func (l *waLogger) prefix(msg string) string {

@@ -92,8 +92,8 @@ func TestSweep(t *testing.T) {
 	addChannel(t, s, "c3", "whatsapp", deletedChannel, true)
 	addChannel(t, s, "c4", "telegram", orphan, false) // other platforms don't count
 
-	if err := Sweep(ctx, s, []string{recent}); err != nil {
-		t.Fatalf("Sweep() error = %v", err)
+	if err := s.sweep(ctx, []string{recent}); err != nil {
+		t.Fatalf("sweep() error = %v", err)
 	}
 
 	got := append([]string(nil), *removed...)
@@ -122,8 +122,8 @@ func TestSweep(t *testing.T) {
 }
 
 func TestSweepWithoutDatabaseIsNoop(t *testing.T) {
-	if err := Sweep(context.Background(), NewStore(nil), nil); err != nil {
-		t.Fatalf("Sweep() error = %v", err)
+	if err := NewStore(nil).sweep(context.Background(), nil); err != nil {
+		t.Fatalf("sweep() error = %v", err)
 	}
 }
 

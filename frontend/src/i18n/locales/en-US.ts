@@ -8015,7 +8015,6 @@ export default {
       whatsappHint: 'Only these numbers get replies; everyone else is ignored. Use a dedicated number for the bot. Files sent to the bot are used for that answer only and are never saved to a knowledge base.',
       whatsappNeedsPairing: 'Pair a WhatsApp account first',
       whatsappNeedsAllowlist: 'Enter the owner number or at least one allowed number',
-      whatsappNeedsRepairing: 'Needs re-pairing',
       sectionChannel: 'Channel info',
       sectionConnection: 'Connection',
       sectionCredentials: 'Platform credentials',

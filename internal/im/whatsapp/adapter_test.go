@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -18,14 +19,15 @@ import (
 
 // fakeClient records what the adapter sends.
 type fakeClient struct {
-	mu        sync.Mutex
-	calls     []string // "send:<text>", "presence:<state>", "read:<id>", "available"
-	sent      []*waE2E.Message
-	sendErrs  []error // consumed in order by SendMessage
-	connected bool
-	lids      map[string]string // LID user → PN user
-	ownLID    types.JID
-	media     map[whatsmeow.DownloadableMessage][]byte
+	mu       sync.Mutex
+	calls    []string // "send:<text>", "presence:<state>", "read:<id>", "available"
+	sent     []*waE2E.Message
+	sendErrs []error           // consumed in order by SendMessage
+	sendIDs  []types.MessageID // request ID of every SendMessage call
+	lids     map[string]string // LID user → PN user
+	ownLID   types.JID
+	media    map[whatsmeow.DownloadableMessage][]byte
+	nextID   int
 }
 
 func (f *fakeClient) log(s string) {
@@ -40,12 +42,20 @@ func (f *fakeClient) Calls() []string {
 	return append([]string(nil), f.calls...)
 }
 
-func (f *fakeClient) Connect() error    { f.connected = true; return nil }
-func (f *fakeClient) Disconnect()       { f.connected = false }
-func (f *fakeClient) IsConnected() bool { return f.connected }
-
-func (f *fakeClient) SendMessage(_ context.Context, _ types.JID, msg *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+func (f *fakeClient) GenerateMessageID() types.MessageID {
 	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextID++
+	return types.MessageID(fmt.Sprintf("ID%d", f.nextID))
+}
+
+func (f *fakeClient) SendMessage(_ context.Context, _ types.JID, msg *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+	f.mu.Lock()
+	var id types.MessageID
+	if len(extra) > 0 {
+		id = extra[0].ID
+	}
+	f.sendIDs = append(f.sendIDs, id)
 	var err error
 	if len(f.sendErrs) > 0 {
 		err, f.sendErrs = f.sendErrs[0], f.sendErrs[1:]
@@ -165,6 +175,9 @@ func TestSendReplyRetriesOnce(t *testing.T) {
 	c.sendErrs = []error{errors.New("transient")}
 	if err := a.SendReply(context.Background(), testIncoming(), &im.ReplyMessage{Content: "ok"}); err != nil {
 		t.Fatalf("SendReply() error = %v, want retry success", err)
+	}
+	if len(c.sendIDs) != 2 || c.sendIDs[0] == "" || c.sendIDs[0] != c.sendIDs[1] {
+		t.Fatalf("send IDs = %v, want one ID reused by the retry", c.sendIDs)
 	}
 
 	c.sendErrs = []error{errors.New("e1"), errors.New("e2")}

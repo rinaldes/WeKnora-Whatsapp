@@ -12,9 +12,7 @@ import (
 // waClient is the part of *whatsmeow.Client the adapter uses. Only the
 // factory touches the concrete client, so tests run against a fake.
 type waClient interface {
-	Connect() error
-	Disconnect()
-	IsConnected() bool
+	GenerateMessageID() types.MessageID
 	SendMessage(ctx context.Context, to types.JID, msg *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
 	SendChatPresence(ctx context.Context, jid types.JID, state types.ChatPresence, media types.ChatPresenceMedia) error
 	SendPresence(ctx context.Context, state types.Presence) error
