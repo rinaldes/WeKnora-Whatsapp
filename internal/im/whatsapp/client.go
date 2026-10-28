@@ -19,6 +19,23 @@ type waClient interface {
 	SendChatPresence(ctx context.Context, jid types.JID, state types.ChatPresence, media types.ChatPresenceMedia) error
 	SendPresence(ctx context.Context, state types.Presence) error
 	MarkRead(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptTypeExtra ...types.ReceiptType) error
+	// PNForLID looks up the phone-number JID for a LID; empty when unknown.
+	PNForLID(ctx context.Context, lid types.JID) (types.JID, error)
+	// OwnLID is the bot's own LID; empty when not known yet.
+	OwnLID() types.JID
 }
 
-var _ waClient = (*whatsmeow.Client)(nil)
+// whatsmeowClient adds the store lookups the adapter needs to *whatsmeow.Client.
+type whatsmeowClient struct {
+	*whatsmeow.Client
+}
+
+var _ waClient = whatsmeowClient{}
+
+func (c whatsmeowClient) PNForLID(ctx context.Context, lid types.JID) (types.JID, error) {
+	return c.Store.LIDs.GetPNForLID(ctx, lid)
+}
+
+func (c whatsmeowClient) OwnLID() types.JID {
+	return c.Store.GetLID()
+}

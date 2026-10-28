@@ -21,6 +21,8 @@ type fakeClient struct {
 	sent      []*waE2E.Message
 	sendErrs  []error // consumed in order by SendMessage
 	connected bool
+	lids      map[string]string // LID user → PN user
+	ownLID    types.JID
 }
 
 func (f *fakeClient) log(s string) {
@@ -62,6 +64,15 @@ func (f *fakeClient) SendPresence(context.Context, types.Presence) error {
 	f.log("available")
 	return nil
 }
+
+func (f *fakeClient) PNForLID(_ context.Context, lid types.JID) (types.JID, error) {
+	if pn, ok := f.lids[lid.User]; ok {
+		return types.NewJID(pn, types.DefaultUserServer), nil
+	}
+	return types.EmptyJID, nil
+}
+
+func (f *fakeClient) OwnLID() types.JID { return f.ownLID }
 
 func (f *fakeClient) MarkRead(_ context.Context, ids []types.MessageID, _ time.Time, _, _ types.JID, _ ...types.ReceiptType) error {
 	f.log("read:" + strings.Join(ids, ","))

@@ -47,6 +47,9 @@ func TestToIncomingDrops(t *testing.T) {
 			e.Info.Sender, e.Info.Chat = pnJID(testStranger), pnJID(testStranger)
 		}},
 		{"edit", func(e *events.Message) { e.IsEdit = true }},
+		{"unresolvable lid", func(e *events.Message) {
+			e.Info.Sender, e.Info.Chat = lidJID("999"), lidJID("999")
+		}},
 		{"non text", func(e *events.Message) {
 			e.Message = &waE2E.Message{AudioMessage: &waE2E.AudioMessage{}}
 		}},
@@ -155,5 +158,57 @@ func TestConnectedSendsPresenceAndSetsCutoff(t *testing.T) {
 	a.handleEvent(&events.Connected{}) // reconnect keeps the first time
 	if a.connectedAt.Load() != first {
 		t.Fatal("reconnect moved the history cutoff")
+	}
+}
+
+func TestToIncomingResolvesLID(t *testing.T) {
+	a, c := newTestAdapter(t, nil)
+	c.lids = map[string]string{"111222": testFriend}
+
+	viaPN, ok := a.toIncoming(textEvent(pnJID(testFriend), "hi"))
+	if !ok {
+		t.Fatal("PN sender dropped")
+	}
+
+	withAlt := textEvent(lidJID("555666"), "hi")
+	withAlt.Info.SenderAlt = pnJID(testOwner)
+	msg, ok := a.toIncoming(withAlt)
+	if !ok || msg.UserID != testOwner {
+		t.Fatalf("SenderAlt: msg=%+v ok=%v", msg, ok)
+	}
+	if msg.Extra["sender_jid"] != "555666@lid" || msg.Extra["chat_jid"] != "555666@lid" {
+		t.Fatalf("original JIDs not kept: %v", msg.Extra)
+	}
+
+	viaLID, ok := a.toIncoming(textEvent(lidJID("111222"), "hi"))
+	if !ok {
+		t.Fatal("LID sender with store mapping dropped")
+	}
+	if viaLID.UserID != viaPN.UserID {
+		t.Fatalf("UserID via LID = %q, via PN = %q; want the same", viaLID.UserID, viaPN.UserID)
+	}
+
+	stranger := textEvent(lidJID("777"), "hi")
+	c.lids["777"] = testStranger
+	if _, ok := a.toIncoming(stranger); ok {
+		t.Fatal("stranger resolved via LID must still be dropped")
+	}
+}
+
+func TestQuoteRecognisesBotLID(t *testing.T) {
+	a, c := newTestAdapter(t, nil)
+	c.ownLID = lidJID("424242")
+	e := textEvent(pnJID(testOwner), "")
+	e.Message = &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text: proto.String("?"),
+		ContextInfo: &waE2E.ContextInfo{
+			StanzaID:      proto.String("Q1"),
+			Participant:   proto.String("424242@lid"),
+			QuotedMessage: &waE2E.Message{Conversation: proto.String("bot said")},
+		},
+	}}
+	msg, ok := a.toIncoming(e)
+	if !ok || !msg.Quote.IsBotMessage {
+		t.Fatalf("quote of bot LID not recognised: %+v", msg)
 	}
 }

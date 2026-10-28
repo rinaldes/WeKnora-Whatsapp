@@ -112,12 +112,38 @@ func (a *Adapter) toIncoming(evt *events.Message) (*im.IncomingMessage, bool) {
 	}, true
 }
 
-// resolveSenderPN returns the sender's phone number (digits only).
+// resolveSenderPN returns the sender's phone number (digits only), whether
+// WhatsApp addressed them by phone number or by LID. The allowlist and the
+// WeKnora session both key on it, so they don't change with the address form.
 func (a *Adapter) resolveSenderPN(info types.MessageInfo) (string, bool) {
 	if info.Sender.Server == types.DefaultUserServer && info.Sender.User != "" {
 		return info.Sender.User, true
 	}
+	if info.SenderAlt.Server == types.DefaultUserServer && info.SenderAlt.User != "" {
+		return info.SenderAlt.User, true
+	}
+	if info.Sender.Server == types.HiddenUserServer {
+		ctx, cancel := context.WithTimeout(a.ctx, sendTimeout)
+		defer cancel()
+		pn, err := a.client.PNForLID(ctx, info.Sender.ToNonAD())
+		if err == nil && pn.User != "" {
+			return pn.User, true
+		}
+		logger.Debugf(ctx, "[WhatsApp] No phone number for LID %s (err=%v); dropping", info.Sender.User, err)
+	}
 	return "", false
+}
+
+// isBot reports whether jid (PN or LID form) is the bot's own account.
+func (a *Adapter) isBot(jid types.JID) bool {
+	switch jid.Server {
+	case types.DefaultUserServer:
+		return jid.User != "" && jid.User == a.creds.BotNumber()
+	case types.HiddenUserServer:
+		own := a.client.OwnLID()
+		return jid.User != "" && jid.User == own.User
+	}
+	return false
 }
 
 // quoteFrom maps a reply's quoted message, if any.
@@ -128,7 +154,7 @@ func (a *Adapter) quoteFrom(ci *waE2E.ContextInfo) *im.QuotedMessage {
 	q := &im.QuotedMessage{MessageID: ci.GetStanzaID()}
 	if p, err := types.ParseJID(ci.GetParticipant()); err == nil {
 		q.SenderID = p.User
-		q.IsBotMessage = p.User != "" && p.User == a.creds.BotNumber()
+		q.IsBotMessage = a.isBot(p)
 	}
 	quoted := ci.GetQuotedMessage()
 	if text := quoted.GetConversation(); text != "" {

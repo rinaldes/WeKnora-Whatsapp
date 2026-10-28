@@ -46,7 +46,7 @@ func NewFactory(store *Store) im.AdapterFactory {
 
 		client := whatsmeow.NewClient(device, newWALogger("client"))
 		ctx, cancel := context.WithCancel(context.Background())
-		adapter := newAdapter(ctx, client, creds, channel.Locale, msgHandler)
+		adapter := newAdapter(ctx, whatsmeowClient{client}, creds, channel.Locale, msgHandler)
 		client.AddEventHandler(adapter.handleEvent)
 
 		go im.RunSupervised(ctx, im.SupervisorConfig{
