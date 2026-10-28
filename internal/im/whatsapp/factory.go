@@ -54,9 +54,14 @@ func NewFactory(store *Store) im.AdapterFactory {
 			return nil, nil, fmt.Errorf("whatsapp channel not paired")
 		}
 
+		// Unlink devices left behind by deleted channels, rebinds and
+		// abandoned pairings; keep doing it hourly.
+		go store.sweepNow()
+		store.startSweeping()
+
 		client := whatsmeow.NewClient(device, newWALogger("client"))
 		ctx, cancel := context.WithCancel(context.Background())
-		adapter := newAdapter(ctx, whatsmeowClient{client}, creds, channel.Locale, msgHandler)
+		adapter := newAdapter(ctx, cancel, whatsmeowClient{client}, creds, channel.Locale, msgHandler)
 		client.AddEventHandler(adapter.handleEvent)
 
 		go im.RunSupervised(ctx, im.SupervisorConfig{
@@ -70,9 +75,6 @@ func NewFactory(store *Store) im.AdapterFactory {
 			},
 		})
 
-		return adapter, func() {
-			cancel()
-			adapter.close()
-		}, nil
+		return adapter, adapter.close, nil
 	}
 }

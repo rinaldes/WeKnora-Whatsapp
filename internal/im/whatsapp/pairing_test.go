@@ -94,7 +94,7 @@ func code(c string) whatsmeow.QRChannelItem {
 
 func managerWith(clients ...*fakePairClient) *PairingManager {
 	i := 0
-	m := newPairingManager(func(context.Context) (pairClient, error) {
+	m := newPairingManager(NewStore(nil), func(context.Context) (pairClient, error) {
 		c := clients[i]
 		i++
 		return c, nil

@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -300,5 +301,33 @@ func TestToIncomingMapsDocument(t *testing.T) {
 				t.Fatalf("msg = %+v", msg)
 			}
 		})
+	}
+}
+
+func TestTerminalEventsStopChannel(t *testing.T) {
+	for _, evt := range []any{&events.LoggedOut{}, &events.StreamReplaced{}} {
+		t.Run(fmt.Sprintf("%T", evt), func(t *testing.T) {
+			a, _ := newTestAdapter(t, nil)
+			a.typing.Start(testChat)
+			a.handleEvent(evt)
+			if a.ctx.Err() == nil {
+				t.Fatal("adapter context not cancelled")
+			}
+			a.typing.mu.Lock()
+			n := len(a.typing.loops)
+			a.typing.mu.Unlock()
+			if n != 0 {
+				t.Fatal("typing loops still running")
+			}
+		})
+	}
+}
+
+func TestTransientEventsKeepRunning(t *testing.T) {
+	a, _ := newTestAdapter(t, nil)
+	a.handleEvent(&events.TemporaryBan{})
+	a.handleEvent(&events.ConnectFailure{})
+	if a.ctx.Err() != nil {
+		t.Fatal("transient failure stopped the channel")
 	}
 }

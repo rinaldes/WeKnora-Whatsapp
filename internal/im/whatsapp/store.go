@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"gorm.io/gorm"
 )
@@ -19,12 +21,22 @@ type Store struct {
 	once    sync.Once
 	c       *sqlstore.Container
 	initErr error
+
+	// recent holds devices paired in the last recentPairingTTL. Their channel
+	// may not be saved yet, so the device sweep must keep them.
+	recentMu sync.Mutex
+	recent   map[string]time.Time
+
+	sweepMu   sync.Mutex // one sweep at a time
+	sweepOnce sync.Once
+	// logout unlinks and deletes an orphaned device; replaced in tests.
+	logout func(ctx context.Context, device *store.Device) error
 }
 
 // NewStore returns a Store backed by db. No connection or migration happens
 // until Container is first called.
 func NewStore(db *gorm.DB) *Store {
-	return &Store{db: db}
+	return &Store{db: db, recent: make(map[string]time.Time), logout: logoutDevice}
 }
 
 // Container returns the shared device container, creating it and running
@@ -58,6 +70,28 @@ func (s *Store) open(ctx context.Context) (*sqlstore.Container, error) {
 		return nil, fmt.Errorf("whatsapp store: upgrade: %w", err)
 	}
 	return c, nil
+}
+
+// rememberPaired records a freshly paired device.
+func (s *Store) rememberPaired(jid string) {
+	s.recentMu.Lock()
+	defer s.recentMu.Unlock()
+	s.recent[jid] = time.Now()
+}
+
+// RecentlyPaired lists devices paired in the last recentPairingTTL.
+func (s *Store) RecentlyPaired() []string {
+	s.recentMu.Lock()
+	defer s.recentMu.Unlock()
+	out := make([]string, 0, len(s.recent))
+	for jid, at := range s.recent {
+		if time.Since(at) > recentPairingTTL {
+			delete(s.recent, jid)
+			continue
+		}
+		out = append(out, jid)
+	}
+	return out
 }
 
 // sqlDialect maps a gorm dialector name to whatsmeow's dialect name.

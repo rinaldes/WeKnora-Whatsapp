@@ -88,18 +88,18 @@ func (p *pairing) update(fn func(r *PairingResult)) {
 // in the shared store, before any channel exists ("bind before create").
 // State is in memory: this assumes a single WeKnora instance.
 type PairingManager struct {
+	store     *Store
 	newClient func(ctx context.Context) (pairClient, error)
 	ttl       time.Duration
 	settle    time.Duration
 
 	mu       sync.Mutex
 	pairings map[string]*pairing
-	recent   map[string]time.Time // device JID → paired at
 }
 
 // NewPairingManager returns a manager that creates devices in store.
 func NewPairingManager(s *Store) *PairingManager {
-	m := newPairingManager(func(ctx context.Context) (pairClient, error) {
+	m := newPairingManager(s, func(ctx context.Context) (pairClient, error) {
 		c, err := s.Container(ctx)
 		if err != nil {
 			return nil, err
@@ -110,13 +110,13 @@ func NewPairingManager(s *Store) *PairingManager {
 	return m
 }
 
-func newPairingManager(newClient func(ctx context.Context) (pairClient, error)) *PairingManager {
+func newPairingManager(s *Store, newClient func(ctx context.Context) (pairClient, error)) *PairingManager {
 	return &PairingManager{
+		store:     s,
 		newClient: newClient,
 		ttl:       pairingTTL,
 		settle:    pairSettleTimeout,
 		pairings:  make(map[string]*pairing),
-		recent:    make(map[string]time.Time),
 	}
 }
 
@@ -135,6 +135,7 @@ func (m *PairingManager) Start(ctx context.Context) (string, PairingResult, erro
 	if pending >= maxInflightPairings {
 		return "", PairingResult{}, ErrTooManyPairings
 	}
+	m.store.startSweeping()
 
 	client, err := m.newClient(ctx)
 	if err != nil {
@@ -215,14 +216,7 @@ func (m *PairingManager) Status(id string) (PairingResult, bool) {
 // RecentDeviceJIDs lists devices paired in the last recentPairingTTL; their
 // channel may not be saved yet, so device cleanup must keep them.
 func (m *PairingManager) RecentDeviceJIDs() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.pruneLocked()
-	out := make([]string, 0, len(m.recent))
-	for jid := range m.recent {
-		out = append(out, jid)
-	}
-	return out
+	return m.store.RecentlyPaired()
 }
 
 func (m *PairingManager) pruneLocked() {
@@ -233,11 +227,6 @@ func (m *PairingManager) pruneLocked() {
 		p.mu.Unlock()
 		if expired {
 			delete(m.pairings, id)
-		}
-	}
-	for jid, at := range m.recent {
-		if now.Sub(at) > recentPairingTTL {
-			delete(m.recent, jid)
 		}
 	}
 }
@@ -283,9 +272,7 @@ func (m *PairingManager) handleItem(ctx context.Context, client pairClient, p *p
 			})
 			return
 		}
-		m.mu.Lock()
-		m.recent[jid] = time.Now()
-		m.mu.Unlock()
+		m.store.rememberPaired(jid)
 		p.update(func(r *PairingResult) {
 			r.Status = PairingSuccess
 			r.QRCode = ""

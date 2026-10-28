@@ -26,6 +26,7 @@ const sendTimeout = 30 * time.Second
 // service collects the full answer and calls SendReply once.
 type Adapter struct {
 	ctx        context.Context // adapter lifetime; cancelled when the channel stops
+	stop       context.CancelFunc
 	client     waClient
 	creds      Credentials
 	locale     string
@@ -37,11 +38,12 @@ type Adapter struct {
 	connectedAt atomic.Int64 // unix nanos of the first connect; 0 until then
 }
 
-func newAdapter(ctx context.Context, client waClient, creds Credentials, locale string,
+func newAdapter(ctx context.Context, stop context.CancelFunc, client waClient, creds Credentials, locale string,
 	msgHandler func(context.Context, *im.IncomingMessage) error,
 ) *Adapter {
 	a := &Adapter{
 		ctx:        ctx,
+		stop:       stop,
 		client:     client,
 		creds:      creds,
 		locale:     locale,
@@ -72,7 +74,8 @@ func (a *Adapter) SendReply(ctx context.Context, incoming *im.IncomingMessage, r
 	}
 	a.typing.Stop(chat)
 
-	content := im.FormatIMDisplayContent(reply.Content, im.StreamDisplayFinal)
+	content := localizeCoreNotice(reply.Content, a.locale)
+	content = im.FormatIMDisplayContent(content, im.StreamDisplayFinal)
 	chunks := Chunk(ToWhatsApp(content), maxChunkRunes)
 	for i, text := range chunks {
 		msg := &waE2E.ExtendedTextMessage{Text: proto.String(text)}
@@ -145,7 +148,9 @@ func (a *Adapter) sendChatPresence(chat types.JID, state types.ChatPresence) {
 	}
 }
 
-// close stops all typing loops. Called when the channel stops.
+// close stops the connection and all typing loops. Called when the channel
+// stops, or by the adapter itself when the session is gone for good.
 func (a *Adapter) close() {
+	a.stop()
 	a.typing.StopAll()
 }

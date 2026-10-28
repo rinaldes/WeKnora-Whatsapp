@@ -103,7 +103,7 @@ func newTestAdapter(t *testing.T, handler func(context.Context, *im.IncomingMess
 	if handler == nil {
 		handler = func(context.Context, *im.IncomingMessage) error { return nil }
 	}
-	a := newAdapter(ctx, client, Credentials{
+	a := newAdapter(ctx, cancel, client, Credentials{
 		DeviceJID:      testBotJID,
 		OwnerNumber:    testOwner,
 		AllowedNumbers: []string{testFriend},

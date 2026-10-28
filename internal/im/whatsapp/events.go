@@ -30,6 +30,21 @@ func (a *Adapter) handleEvent(evt any) {
 		}
 	case *events.Message:
 		a.handleMessage(e)
+	case *events.LoggedOut:
+		// Unlinked on the phone, or banned. whatsmeow has already deleted the
+		// keys, so reconnecting can't work: stop for good and wait for a
+		// rebind from the channel drawer, which restarts the channel.
+		logger.Errorf(a.ctx, "[WhatsApp] Device %s logged out (reason %s); channel stopped, re-pair it to resume",
+			a.creds.DeviceJID, e.Reason)
+		a.close()
+	case *events.StreamReplaced:
+		// Another client connected with the same keys. Don't fight over it.
+		logger.Errorf(a.ctx, "[WhatsApp] Device %s connected elsewhere; channel stopped", a.creds.DeviceJID)
+		a.close()
+	case *events.TemporaryBan:
+		logger.Errorf(a.ctx, "[WhatsApp] Device %s temporarily banned: %s", a.creds.DeviceJID, e)
+	case *events.ConnectFailure:
+		logger.Warnf(a.ctx, "[WhatsApp] Connect failure for %s: %s %s", a.creds.DeviceJID, e.Reason, e.Message)
 	}
 }
 
