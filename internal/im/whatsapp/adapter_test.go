@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
+	"google.golang.org/protobuf/proto"
 )
 
 // fakeClient records what the adapter sends.
@@ -23,6 +25,7 @@ type fakeClient struct {
 	connected bool
 	lids      map[string]string // LID user → PN user
 	ownLID    types.JID
+	media     map[whatsmeow.DownloadableMessage][]byte
 }
 
 func (f *fakeClient) log(s string) {
@@ -73,6 +76,13 @@ func (f *fakeClient) PNForLID(_ context.Context, lid types.JID) (types.JID, erro
 }
 
 func (f *fakeClient) OwnLID() types.JID { return f.ownLID }
+
+func (f *fakeClient) Download(_ context.Context, msg whatsmeow.DownloadableMessage) ([]byte, error) {
+	if b, ok := f.media[msg]; ok {
+		return b, nil
+	}
+	return nil, errors.New("not found")
+}
 
 func (f *fakeClient) MarkRead(_ context.Context, ids []types.MessageID, _ time.Time, _, _ types.JID, _ ...types.ReceiptType) error {
 	f.log("read:" + strings.Join(ids, ","))
@@ -194,5 +204,39 @@ func TestCallbacksDisabled(t *testing.T) {
 	}
 	if _, err := a.ParseCallback(nil); err == nil {
 		t.Fatal("ParseCallback() error = nil")
+	}
+}
+
+func TestDownloadFile(t *testing.T) {
+	a, c := newTestAdapter(t, nil)
+	doc := &waE2E.DocumentMessage{FileName: proto.String("report.pdf")}
+	c.media = map[whatsmeow.DownloadableMessage][]byte{doc: []byte("%PDF-1.7")}
+	a.media.put("MSG9", doc)
+
+	rc, name, err := a.DownloadFile(context.Background(), &im.IncomingMessage{FileKey: "MSG9", FileName: "report.pdf"})
+	if err != nil {
+		t.Fatalf("DownloadFile() error = %v", err)
+	}
+	defer rc.Close()
+	body, _ := io.ReadAll(rc)
+	if string(body) != "%PDF-1.7" || name != "report.pdf" {
+		t.Fatalf("got %q, %q", body, name)
+	}
+
+	if _, _, err := a.DownloadFile(context.Background(), &im.IncomingMessage{FileKey: "gone"}); err == nil {
+		t.Fatal("DownloadFile(expired) error = nil")
+	}
+}
+
+func TestSendReplyQuotesOriginalCaption(t *testing.T) {
+	a, c := newTestAdapter(t, nil)
+	in := testIncoming()
+	in.Content = "core-rewritten attachment prompt"
+	in.Extra["quote_text"] = "📄 report.pdf"
+	if err := a.SendReply(context.Background(), in, &im.ReplyMessage{Content: "summary"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.sent[0].GetExtendedTextMessage().GetContextInfo().GetQuotedMessage().GetConversation(); got != "📄 report.pdf" {
+		t.Fatalf("quoted = %q", got)
 	}
 }

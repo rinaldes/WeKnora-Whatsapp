@@ -1,9 +1,11 @@
 package whatsapp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync/atomic"
 	"time"
 
@@ -29,6 +31,7 @@ type Adapter struct {
 	locale     string
 	msgHandler func(context.Context, *im.IncomingMessage) error
 	typing     *typingLoops
+	media      *mediaCache
 
 	startedAt   time.Time
 	connectedAt atomic.Int64 // unix nanos of the first connect; 0 until then
@@ -43,6 +46,7 @@ func newAdapter(ctx context.Context, client waClient, creds Credentials, locale 
 		creds:      creds,
 		locale:     locale,
 		msgHandler: msgHandler,
+		media:      newMediaCache(),
 		startedAt:  time.Now(),
 	}
 	a.typing = newTypingLoops(a.sendChatPresence)
@@ -101,16 +105,36 @@ func (a *Adapter) send(ctx context.Context, chat types.JID, msg *waE2E.Message) 
 }
 
 // quoteContext quotes the user's message. Only its text is known here, so
-// the quoted body is rebuilt from it.
+// the quoted body is rebuilt from it. Core rewrites Content for attachments,
+// so the original text is read from Extra.
 func quoteContext(incoming *im.IncomingMessage) *waE2E.ContextInfo {
+	text, ok := incoming.Extra["quote_text"]
+	if !ok {
+		text = incoming.Content
+	}
 	ci := &waE2E.ContextInfo{
 		StanzaID:      proto.String(incoming.MessageID),
-		QuotedMessage: &waE2E.Message{Conversation: proto.String(incoming.Content)},
+		QuotedMessage: &waE2E.Message{Conversation: proto.String(text)},
 	}
 	if sender := incoming.Extra["sender_jid"]; sender != "" {
 		ci.Participant = proto.String(sender)
 	}
 	return ci
+}
+
+// DownloadFile implements im.FileDownloader for images and documents. The
+// file is used only as a QA attachment; WhatsApp channels never save to a
+// knowledge base.
+func (a *Adapter) DownloadFile(ctx context.Context, msg *im.IncomingMessage) (io.ReadCloser, string, error) {
+	media, ok := a.media.get(msg.FileKey)
+	if !ok {
+		return nil, "", fmt.Errorf("whatsapp media %s expired", msg.FileKey)
+	}
+	data, err := a.client.Download(ctx, media)
+	if err != nil {
+		return nil, "", fmt.Errorf("whatsapp download: %w", err)
+	}
+	return io.NopCloser(bytes.NewReader(data)), msg.FileName, nil
 }
 
 func (a *Adapter) sendChatPresence(chat types.JID, state types.ChatPresence) {

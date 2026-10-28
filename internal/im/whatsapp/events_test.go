@@ -50,8 +50,18 @@ func TestToIncomingDrops(t *testing.T) {
 		{"unresolvable lid", func(e *events.Message) {
 			e.Info.Sender, e.Info.Chat = lidJID("999"), lidJID("999")
 		}},
-		{"non text", func(e *events.Message) {
+		{"audio", func(e *events.Message) {
 			e.Message = &waE2E.Message{AudioMessage: &waE2E.AudioMessage{}}
+		}},
+		{"video", func(e *events.Message) {
+			e.Message = &waE2E.Message{VideoMessage: &waE2E.VideoMessage{Caption: proto.String("x")}}
+		}},
+		{"sticker", func(e *events.Message) {
+			e.Message = &waE2E.Message{StickerMessage: &waE2E.StickerMessage{}}
+		}},
+		{"stranger image", func(e *events.Message) {
+			e.Info.Sender, e.Info.Chat = pnJID(testStranger), pnJID(testStranger)
+			e.Message = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{}}
 		}},
 		{"reaction", func(e *events.Message) {
 			e.Message = &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Text: proto.String("👍")}}
@@ -210,5 +220,85 @@ func TestQuoteRecognisesBotLID(t *testing.T) {
 	msg, ok := a.toIncoming(e)
 	if !ok || !msg.Quote.IsBotMessage {
 		t.Fatalf("quote of bot LID not recognised: %+v", msg)
+	}
+}
+
+func TestToIncomingMapsImage(t *testing.T) {
+	a, _ := newTestAdapter(t, nil)
+	for _, tt := range []struct {
+		name, caption, mime, wantName, wantQuote string
+	}{
+		{"with caption", "what is this?", "image/png", "MSG1.png", "what is this?"},
+		{"no caption, unknown mime", "", "", "MSG1.jpg", "📷 Photo"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := textEvent(pnJID(testOwner), "")
+			img := &waE2E.ImageMessage{FileLength: proto.Uint64(1234)}
+			if tt.caption != "" {
+				img.Caption = proto.String(tt.caption)
+			}
+			if tt.mime != "" {
+				img.Mimetype = proto.String(tt.mime)
+			}
+			e.Message = &waE2E.Message{ImageMessage: img}
+			msg, ok := a.toIncoming(e)
+			if !ok {
+				t.Fatal("image dropped")
+			}
+			if msg.MessageType != im.MessageTypeImage || msg.Content != tt.caption || msg.FileName != tt.wantName ||
+				msg.FileSize != 1234 || msg.FileKey != "MSG1" || msg.Extra["quote_text"] != tt.wantQuote {
+				t.Fatalf("msg = %+v", msg)
+			}
+			if got, ok := a.media.get("MSG1"); !ok || got != img {
+				t.Fatal("image proto not cached")
+			}
+		})
+	}
+}
+
+func TestToIncomingMapsDocument(t *testing.T) {
+	a, _ := newTestAdapter(t, nil)
+	for _, tt := range []struct {
+		name     string
+		msg      *waE2E.Message
+		wantName string
+		caption  string
+	}{
+		{
+			"plain", &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
+				FileName: proto.String("Q3 report.pdf"), Mimetype: proto.String("application/pdf"),
+			}},
+			"Q3 report.pdf", "",
+		},
+		{
+			"caption wrapper", &waE2E.Message{DocumentWithCaptionMessage: &waE2E.FutureProofMessage{
+				Message: &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
+					FileName: proto.String("notes"), Mimetype: proto.String("text/plain"),
+					Caption: proto.String("summarise"),
+				}},
+			}},
+			"notes.txt", "summarise",
+		},
+		{
+			"no name", &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{Mimetype: proto.String("application/pdf")}},
+			"MSG1.pdf", "",
+		},
+		{
+			"path in name", &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{FileName: proto.String("../../etc/x.pdf")}},
+			"x.pdf", "",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := textEvent(pnJID(testFriend), "")
+			e.Message = tt.msg
+			msg, ok := a.toIncoming(e)
+			if !ok {
+				t.Fatal("document dropped")
+			}
+			if msg.MessageType != im.MessageTypeFile || msg.FileName != tt.wantName || msg.Content != tt.caption ||
+				msg.FileKey != "MSG1" {
+				t.Fatalf("msg = %+v", msg)
+			}
+		})
 	}
 }

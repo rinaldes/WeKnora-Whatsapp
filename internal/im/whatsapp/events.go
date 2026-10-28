@@ -2,6 +2,8 @@ package whatsapp
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/im"
@@ -83,33 +85,84 @@ func (a *Adapter) toIncoming(evt *events.Message) (*im.IncomingMessage, bool) {
 		return nil, false
 	}
 
-	m := evt.Message
-	text := m.GetConversation()
-	var ctxInfo *waE2E.ContextInfo
-	if ext := m.GetExtendedTextMessage(); ext != nil {
-		if text == "" {
-			text = ext.GetText()
-		}
-		ctxInfo = ext.GetContextInfo()
-	}
-	if text == "" {
-		return nil, false
-	}
-
-	return &im.IncomingMessage{
-		Platform:    im.PlatformWhatsApp,
-		MessageType: im.MessageTypeText,
-		UserID:      pn,
-		UserName:    info.PushName,
-		ChatType:    im.ChatTypeDirect,
-		Content:     text,
-		MessageID:   info.ID,
-		Quote:       a.quoteFrom(ctxInfo),
+	msg := &im.IncomingMessage{
+		Platform:  im.PlatformWhatsApp,
+		UserID:    pn,
+		UserName:  info.PushName,
+		ChatType:  im.ChatTypeDirect,
+		MessageID: info.ID,
 		Extra: map[string]string{
 			"chat_jid":   info.Chat.String(),
 			"sender_jid": info.Sender.String(),
 		},
-	}, true
+	}
+	m := evt.Message
+	if doc := m.GetDocumentWithCaptionMessage().GetMessage().GetDocumentMessage(); doc != nil {
+		m = &waE2E.Message{DocumentMessage: doc} // whatsmeow usually unwraps this already
+	}
+	var ctxInfo *waE2E.ContextInfo
+	switch {
+	case m.GetConversation() != "":
+		msg.MessageType = im.MessageTypeText
+		msg.Content = m.GetConversation()
+	case m.GetExtendedTextMessage().GetText() != "":
+		ext := m.GetExtendedTextMessage()
+		msg.MessageType = im.MessageTypeText
+		msg.Content = ext.GetText()
+		ctxInfo = ext.GetContextInfo()
+	case m.GetImageMessage() != nil:
+		img := m.GetImageMessage()
+		msg.MessageType = im.MessageTypeImage
+		msg.Content = img.GetCaption()
+		msg.FileName = info.ID + extForMIME(img.GetMimetype(), ".jpg")
+		msg.FileSize = int64(img.GetFileLength())
+		ctxInfo = img.GetContextInfo()
+		a.media.put(info.ID, img)
+	case m.GetDocumentMessage() != nil:
+		doc := m.GetDocumentMessage()
+		msg.MessageType = im.MessageTypeFile
+		msg.Content = doc.GetCaption()
+		msg.FileName = documentFileName(doc, info.ID)
+		msg.FileSize = int64(doc.GetFileLength())
+		ctxInfo = doc.GetContextInfo()
+		a.media.put(info.ID, doc)
+	default: // audio, video, sticker, location, contact, reaction, poll, ...
+		return nil, false
+	}
+	if msg.MessageType != im.MessageTypeText {
+		// A non-empty FileKey marks the message as an attachment to core.
+		msg.FileKey = info.ID
+	}
+	msg.Extra["quote_text"] = quoteText(msg)
+	msg.Quote = a.quoteFrom(ctxInfo)
+	return msg, true
+}
+
+// documentFileName is the sender's file name, or one built from the message
+// ID and MIME type.
+func documentFileName(doc *waE2E.DocumentMessage, id string) string {
+	name := strings.TrimSpace(filepath.Base(doc.GetFileName()))
+	if name != "" && name != "." && name != "/" {
+		if filepath.Ext(name) == "" {
+			name += extForMIME(doc.GetMimetype(), "")
+		}
+		return name
+	}
+	return id + extForMIME(doc.GetMimetype(), ".bin")
+}
+
+// quoteText is what a reply shows as the quoted user message.
+func quoteText(msg *im.IncomingMessage) string {
+	if msg.Content != "" {
+		return msg.Content
+	}
+	switch msg.MessageType {
+	case im.MessageTypeImage:
+		return "📷 Photo"
+	case im.MessageTypeFile:
+		return "📄 " + msg.FileName
+	}
+	return ""
 }
 
 // resolveSenderPN returns the sender's phone number (digits only), whether

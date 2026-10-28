@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/im"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
@@ -19,6 +20,15 @@ const maxConnAge = 24 * time.Hour
 // channel connects with the device paired earlier through PairingManager.
 func NewFactory(store *Store) im.AdapterFactory {
 	return func(factoryCtx context.Context, channel *im.IMChannel, msgHandler func(context.Context, *im.IncomingMessage) error) (im.Adapter, context.CancelFunc, error) {
+		// WhatsApp never saves files to a knowledge base (one KB is shared by
+		// every allowlisted sender). The handler forces this; clear it here too
+		// in case the row was edited another way. Core's QA request uses this
+		// same channel value.
+		if channel.KnowledgeBaseID != "" {
+			logger.Warnf(factoryCtx, "[WhatsApp] Channel %s has knowledge_base_id set; ignoring it", channel.ID)
+			channel.KnowledgeBaseID = ""
+		}
+
 		creds, err := ParseCredentials(channel.Credentials)
 		if err != nil {
 			return nil, nil, err
