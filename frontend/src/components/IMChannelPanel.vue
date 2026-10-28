@@ -87,9 +87,9 @@
 
       <div class="im-steps">
         <div v-for="(title, i) in stepTitles" :key="i"
-          :class="['im-step', { active: wizardStep === i, done: wizardStep > i }]">
+          :class="['im-step', { active: stepPosition === i, done: stepPosition > i }]">
           <span class="im-step-num">
-            <t-icon v-if="wizardStep > i" name="check" class="im-step-check" />
+            <t-icon v-if="stepPosition > i" name="check" class="im-step-check" />
             <template v-else>{{ i + 1 }}</template>
           </span>
           <span class="im-step-title">{{ title }}</span>
@@ -146,7 +146,8 @@
 
       <!-- Step 2: Connection -->
       <div v-else-if="wizardStep === 1" class="im-step-body">
-        <section v-if="formData.platform !== 'wechat'" class="setting-drawer__section im-drawer__section">
+        <section v-if="!FIXED_TRANSPORT_PLATFORMS.includes(formData.platform)"
+          class="setting-drawer__section im-drawer__section">
           <h4 class="setting-drawer__section-title">{{ $t('agentEditor.im.sectionAccess') }}</h4>
 
           <div class="form-item">
@@ -536,6 +537,51 @@
               </div>
             </template>
 
+            <!-- WhatsApp credentials (QR pairing + allowlist) -->
+            <template v-if="formData.platform === 'whatsapp'">
+              <p class="form-desc">{{ $t('agentEditor.im.whatsappHint') }}</p>
+
+              <div v-if="whatsappBound" class="wechat-bound-status">
+                <t-icon name="check-circle-filled" class="bound-icon" />
+                <span>{{ $t('agentEditor.im.whatsappBotNumber') }}: +{{ whatsappBotNumber }}</span>
+                <t-button size="small" variant="outline" theme="default" :loading="whatsappLoading"
+                  @click="startWhatsAppPairingFlow">
+                  {{ $t('agentEditor.im.whatsappRebind') }}
+                </t-button>
+              </div>
+
+              <div v-if="!whatsappBound || whatsappQR" class="wechat-qr-section">
+                <div v-if="!whatsappQR" class="wechat-bind-action">
+                  <t-button theme="default" variant="outline" :loading="whatsappLoading"
+                    @click="startWhatsAppPairingFlow">
+                    <template #icon><t-icon name="scan" /></template>
+                    {{ $t('agentEditor.im.whatsappPair') }}
+                  </t-button>
+                </div>
+                <div v-else class="wechat-qr-display">
+                  <t-qrcode :value="whatsappQR" :size="200" :status="whatsappQRStatus" color="#000000"
+                    bg-color="#ffffff" @refresh="startWhatsAppPairingFlow" />
+                  <p class="qr-hint">
+                    {{ whatsappQRStatus === 'expired' ? $t('agentEditor.im.whatsappQRExpired')
+                      : $t('agentEditor.im.whatsappScanning') }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="form-item">
+                <label class="form-label">{{ $t('agentEditor.im.whatsappOwnerNumber') }}</label>
+                <t-input v-model="formData.credentials.owner_number"
+                  :placeholder="$t('agentEditor.im.whatsappOwnerNumberPlaceholder')"
+                  @blur="formData.credentials.owner_number = normalizePhoneNumber(formData.credentials.owner_number)" />
+              </div>
+              <div class="form-item">
+                <label class="form-label">{{ $t('agentEditor.im.whatsappAllowedNumbers') }}</label>
+                <t-tag-input :model-value="formData.credentials.allowed_numbers" clearable
+                  :placeholder="$t('agentEditor.im.whatsappAllowedNumbersPlaceholder')"
+                  @change="onAllowedNumbersChange" />
+              </div>
+            </template>
+
             <!-- WeChat credentials (QR code binding) -->
             <template v-if="formData.platform === 'wechat'">
               <p class="form-desc">{{ $t('agentEditor.im.wechatHint') }}</p>
@@ -595,6 +641,7 @@ import { normalizeOptionalString } from '@/utils/optionalString';
 import {
   listIMChannels, createIMChannel, updateIMChannel, deleteIMChannel, toggleIMChannel,
   getWeChatQRCode, pollWeChatQRCodeStatus, listAllIMChannels,
+  startWhatsAppPairing, pollWhatsAppPairing,
   type IMChannelOverview, type CustomAgent,
 } from '@/api/agent';
 import { useChatResourcesStore } from '@/stores/chatResources';
@@ -612,6 +659,7 @@ import mattermostLogo from '@/assets/img/im/mattermost.svg';
 import wechatLogo from '@/assets/img/im/wechat.svg';
 import qqbotLogo from '@/assets/img/im/qqbot.png';
 import yunzhijiaLogo from '@/assets/img/im/yunzhijia.svg';
+import whatsappLogo from '@/assets/img/im/whatsapp.svg';
 
 type IMPlatform = IMChannel['platform'];
 type IMLocale = NonNullable<IMChannel['locale']>;
@@ -627,7 +675,13 @@ const PLATFORM_LOGO: Record<string, string> = {
   wechat: wechatLogo,
   qqbot: qqbotLogo,
   yunzhijia: yunzhijiaLogo,
+  whatsapp: whatsappLogo,
 };
+
+// Platforms whose connection mode and output mode are fixed server-side.
+const FIXED_TRANSPORT_PLATFORMS: string[] = ['wechat', 'whatsapp'];
+// Index of the file knowledge base wizard step.
+const KNOWLEDGE_STEP = 2;
 
 const platformLogo = (platform: string): string => (platform ? PLATFORM_LOGO[platform] || '' : '');
 
@@ -655,17 +709,29 @@ const editingEnabled = ref(true);
 const wizardStep = ref(0);
 const channelNameTouched = ref(false);
 
-const stepTitles = computed(() => [
+const allStepTitles = computed(() => [
   t('agentEditor.im.stepBasic'),
   t('agentEditor.im.stepConnection'),
   t('agentEditor.im.stepKnowledge'),
   t('agentEditor.im.stepCredentials'),
 ]);
 
-const drawerStepDescription = computed(() => stepTitles.value[wizardStep.value] ?? '');
+// WhatsApp never saves files to a knowledge base, so its wizard skips that step.
+const visibleSteps = computed(() =>
+  allStepTitles.value
+    .map((_, i) => i)
+    .filter((i) => !(i === KNOWLEDGE_STEP && formData.value.platform === 'whatsapp')),
+);
+
+const stepTitles = computed(() => visibleSteps.value.map((i) => allStepTitles.value[i]));
+
+// Position of the current step among the visible ones.
+const stepPosition = computed(() => Math.max(0, visibleSteps.value.indexOf(wizardStep.value)));
+
+const drawerStepDescription = computed(() => stepTitles.value[stepPosition.value] ?? '');
 
 const drawerConfirmText = computed(() =>
-  wizardStep.value < stepTitles.value.length - 1 ? t('common.next') : t('common.save'),
+  stepPosition.value < stepTitles.value.length - 1 ? t('common.next') : t('common.save'),
 );
 
 const platformOptions = computed(() => ([
@@ -679,6 +745,7 @@ const platformOptions = computed(() => ([
   { value: 'wechat' as IMPlatform, label: t('agentEditor.im.wechat'), logo: wechatLogo },
   { value: 'qqbot' as IMPlatform, label: t('agentEditor.im.qqbot'), logo: qqbotLogo },
   { value: 'yunzhijia' as IMPlatform, label: t('agentEditor.im.yunzhijia'), logo: yunzhijiaLogo },
+  { value: 'whatsapp' as IMPlatform, label: t('agentEditor.im.whatsapp'), logo: whatsappLogo },
 ]));
 
 const localeOptions = computed(() => ([
@@ -715,13 +782,13 @@ function validateWizardStep(step: number): boolean {
 }
 
 function prevWizardStep() {
-  if (wizardStep.value > 0) wizardStep.value -= 1;
+  if (stepPosition.value > 0) wizardStep.value = visibleSteps.value[stepPosition.value - 1];
 }
 
 async function handleDrawerConfirm() {
-  if (wizardStep.value < stepTitles.value.length - 1) {
+  if (stepPosition.value < visibleSteps.value.length - 1) {
     if (!validateWizardStep(wizardStep.value)) return;
-    wizardStep.value += 1;
+    wizardStep.value = visibleSteps.value[stepPosition.value + 1];
     return;
   }
   await handleSave();
@@ -738,6 +805,15 @@ const wechatQRStatus = ref<string>('');
 const wechatLoading = ref(false);
 let wechatPollActive = false;
 let wechatPollTimer: ReturnType<typeof setTimeout> | null = null;
+
+// WhatsApp QR pairing state
+const whatsappPairingId = ref('');
+const whatsappQR = ref('');  // text to render as a QR code; rotates while pending
+const whatsappQRStatus = ref<'active' | 'expired' | 'loading'>('active');
+const whatsappLoading = ref(false);
+let whatsappPollActive = false;
+let whatsappPollTimer: ReturnType<typeof setTimeout> | null = null;
+const WHATSAPP_POLL_INTERVAL_MS = 2000;
 
 const defaultCredentials = (): Record<string, any> => ({});
 
@@ -830,6 +906,7 @@ function onPlatformChange(val: string | number | boolean) {
   if (editingChannel.value) return;
   formData.value.credentials = defaultCredentials();
   stopWeChatPolling();
+  resetWhatsAppPairing();
   wechatQRContent.value = '';
   wechatQRImgUrl.value = '';
   wechatQRCode.value = '';
@@ -838,6 +915,13 @@ function onPlatformChange(val: string | number | boolean) {
   if (val === 'wechat') {
     formData.value.mode = 'longpoll';
     formData.value.output_mode = 'full';
+  } else if (val === 'whatsapp') {
+    // Forced server-side too: one connection, one final message, no KB saves.
+    formData.value.mode = 'websocket';
+    formData.value.output_mode = 'full';
+    formData.value.session_mode = 'user';
+    formData.value.knowledge_base_id = '';
+    formData.value.credentials = { owner_number: '', allowed_numbers: [] };
   } else if (val === 'mattermost' || val === 'yunzhijia') {
     formData.value.mode = 'webhook';
     formData.value.output_mode = 'stream';
@@ -937,6 +1021,89 @@ function stopWeChatPolling() {
   }
 }
 
+// Whether a WhatsApp device is paired for this channel
+const whatsappBound = computed(() =>
+  formData.value.platform === 'whatsapp' && !!formData.value.credentials.device_jid,
+);
+
+// The bot's phone number: device_jid "<number>:<device>@s.whatsapp.net".
+const whatsappBotNumber = computed(() =>
+  String(formData.value.credentials.device_jid || '').split('@')[0].split(':')[0],
+);
+
+// Digits only, E.164 without "+"; the server normalises again.
+function normalizePhoneNumber(value: unknown): string {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
+function onAllowedNumbersChange(value: Array<string | number>) {
+  const numbers = value.map(normalizePhoneNumber).filter(Boolean);
+  formData.value.credentials.allowed_numbers = [...new Set(numbers)];
+}
+
+async function startWhatsAppPairingFlow() {
+  stopWhatsAppPolling();
+  whatsappLoading.value = true;
+  whatsappQRStatus.value = 'loading';
+  try {
+    const res = await startWhatsAppPairing();
+    whatsappPairingId.value = res.data.pairing_id;
+    whatsappQR.value = res.data.qr_code || '';
+    whatsappQRStatus.value = 'active';
+    whatsappPollActive = true;
+    whatsappPollTimer = setTimeout(pollWhatsAppOnce, WHATSAPP_POLL_INTERVAL_MS);
+  } catch (e: any) {
+    whatsappQR.value = '';
+    MessagePlugin.error(e?.message || (typeof e?.error === 'string' ? e.error : null) || t('common.operationFailed'));
+  } finally {
+    whatsappLoading.value = false;
+  }
+}
+
+async function pollWhatsAppOnce() {
+  if (!whatsappPollActive) return;
+  try {
+    const res = await pollWhatsAppPairing(whatsappPairingId.value);
+    if (!whatsappPollActive) return;
+    const data = res.data;
+    if (data.status === 'success' && data.device_jid) {
+      formData.value.credentials = { ...formData.value.credentials, device_jid: data.device_jid };
+      resetWhatsAppPairing();
+      MessagePlugin.success(t('agentEditor.im.whatsappPairSuccess'));
+      return;
+    }
+    if (data.status === 'pending') {
+      if (data.qr_code) whatsappQR.value = data.qr_code;
+    } else {
+      // timeout or error: show the expired overlay; clicking it starts over.
+      stopWhatsAppPolling();
+      whatsappQRStatus.value = 'expired';
+      if (data.status === 'error' && data.error) MessagePlugin.error(data.error);
+      return;
+    }
+  } catch {
+    // transient error; keep polling
+  }
+  if (whatsappPollActive) {
+    whatsappPollTimer = setTimeout(pollWhatsAppOnce, WHATSAPP_POLL_INTERVAL_MS);
+  }
+}
+
+function stopWhatsAppPolling() {
+  whatsappPollActive = false;
+  if (whatsappPollTimer) {
+    clearTimeout(whatsappPollTimer);
+    whatsappPollTimer = null;
+  }
+}
+
+function resetWhatsAppPairing() {
+  stopWhatsAppPolling();
+  whatsappPairingId.value = '';
+  whatsappQR.value = '';
+  whatsappQRStatus.value = 'active';
+}
+
 async function loadChannels() {
   loading.value = true;
   try {
@@ -1008,6 +1175,9 @@ async function editChannel(channel: IMChannel | IMChannelOverview) {
     knowledge_base_id: fullChannel.knowledge_base_id || '',
     credentials: { ...fullChannel.credentials },
   };
+  if (fullChannel.platform === 'whatsapp' && !Array.isArray(formData.value.credentials.allowed_numbers)) {
+    formData.value.credentials.allowed_numbers = [];
+  }
   normalizeYunzhijiaCredentials();
   showCreateDialog.value = true;
 }
@@ -1018,6 +1188,7 @@ function resetForm() {
   wizardStep.value = 0;
   channelNameTouched.value = false;
   stopWeChatPolling();
+  resetWhatsAppPairing();
   wechatQRContent.value = '';
   wechatQRImgUrl.value = '';
   wechatQRCode.value = '';
@@ -1043,6 +1214,22 @@ async function handleSave() {
       MessagePlugin.warning(t('agentEditor.im.wechatScanBind'));
       return;
     }
+    if (formData.value.platform === 'whatsapp') {
+      const creds = formData.value.credentials;
+      creds.owner_number = normalizePhoneNumber(creds.owner_number);
+      if (!creds.device_jid) {
+        MessagePlugin.warning(t('agentEditor.im.whatsappNeedsPairing'));
+        return;
+      }
+      if (!creds.owner_number && !(creds.allowed_numbers || []).length) {
+        MessagePlugin.warning(t('agentEditor.im.whatsappNeedsAllowlist'));
+        return;
+      }
+    }
+    // WhatsApp channels never get a file knowledge base.
+    const knowledgeBase = formData.value.platform === 'whatsapp'
+      ? {}
+      : { knowledge_base_id: normalizeOptionalString(formData.value.knowledge_base_id) };
     if (formData.value.platform === 'yunzhijia') {
       // normalize fills in the default allowed host suffix, so only the send URL
       // needs explicit validation here.
@@ -1060,7 +1247,7 @@ async function handleSave() {
         output_mode: formData.value.output_mode,
         locale: formData.value.locale,
         session_mode: formData.value.session_mode,
-        knowledge_base_id: normalizeOptionalString(formData.value.knowledge_base_id),
+        ...knowledgeBase,
         credentials: formData.value.credentials,
         enabled: editingEnabled.value,
         ...(formData.value.target_agent_id ? { agent_id: formData.value.target_agent_id } : {}),
@@ -1079,7 +1266,7 @@ async function handleSave() {
         output_mode: formData.value.output_mode,
         locale: formData.value.locale,
         session_mode: formData.value.session_mode,
-        knowledge_base_id: normalizeOptionalString(formData.value.knowledge_base_id),
+        ...knowledgeBase,
         credentials: formData.value.credentials,
       });
       MessagePlugin.success(t('common.createSuccess'));
@@ -1124,8 +1311,14 @@ watch(filterAgentId, (id) => {
   }
 });
 
+// Stop pairing polls however the drawer gets closed.
+watch(showCreateDialog, (visible) => {
+  if (!visible) stopWhatsAppPolling();
+});
+
 onUnmounted(() => {
   stopWeChatPolling();
+  stopWhatsAppPolling();
 });
 </script>
 

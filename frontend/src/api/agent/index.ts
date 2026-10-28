@@ -350,7 +350,7 @@ export interface IMChannel {
   tenant_id?: number;
   agent_id: string;
   // 'lark' is Feishu's international edition; it shares Feishu's credentials and modes.
-  platform: 'wecom' | 'feishu' | 'lark' | 'slack' | 'telegram' | 'dingtalk' | 'mattermost' | 'wechat' | 'qqbot' | 'yunzhijia';
+  platform: 'wecom' | 'feishu' | 'lark' | 'slack' | 'telegram' | 'dingtalk' | 'mattermost' | 'wechat' | 'qqbot' | 'yunzhijia' | 'whatsapp';
   name: string;
   enabled: boolean;
   mode: 'webhook' | 'websocket' | 'longpoll';
@@ -458,4 +458,24 @@ export function getWeChatQRCode() {
 
 export function pollWeChatQRCodeStatus(qrcode: string) {
   return post<{ data: WeChatQRCodeStatus }>('/api/v1/wechat/qrcode/status', { qrcode });
+}
+
+// ===== WhatsApp QR Pairing =====
+
+export interface WhatsAppPairing {
+  pairing_id: string;
+  status: 'pending' | 'success' | 'timeout' | 'error';
+  // Text to render as a QR code while pending; rotates every ~20 s.
+  qr_code?: string;
+  // Paired device, e.g. "6281234567890:12@s.whatsapp.net", on success.
+  device_jid?: string;
+  error?: string;
+}
+
+export function startWhatsAppPairing() {
+  return post<{ data: WhatsAppPairing }>('/api/v1/whatsapp/pair');
+}
+
+export function pollWhatsAppPairing(pairingId: string) {
+  return post<{ data: WhatsAppPairing }>('/api/v1/whatsapp/pair/status', { pairing_id: pairingId });
 }
