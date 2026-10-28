@@ -336,6 +336,14 @@ func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler, g
 		wechatGroup.POST("/qrcode", g.Admin(), imHandler.WeChatGetQRCode)
 		wechatGroup.POST("/qrcode/status", g.Admin(), imHandler.WeChatPollQRCodeStatus)
 	}
+
+	// WhatsApp QR pairing — Admin+: a successful scan links a WhatsApp
+	// account to this deployment as a new device.
+	whatsappGroup := g.apiKeyGroup(r.Group("/whatsapp"), apiKeyManageChannels(apiKeyFullAccess()))
+	{
+		whatsappGroup.POST("/pair", g.Admin(), imHandler.WhatsAppStartPairing)
+		whatsappGroup.POST("/pair/status", g.Admin(), imHandler.WhatsAppPairingStatus)
+	}
 }
 
 // embedChannelIDFromPath extracts the channel id from an /embed/:channelID path.

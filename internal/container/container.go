@@ -783,6 +783,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(whatsapp.NewStore))
 	must(container.Invoke(registerIMService))
 	must(container.Provide(handler.NewIMHandler))
+	must(container.Provide(whatsapp.NewPairingManager))
+	must(container.Invoke(handler.SetWhatsAppPairingManager))
 	must(container.Provide(handler.NewEmbedChannelHandler))
 	must(container.Provide(handler.NewMCPEndpointHandler))
 	must(container.Provide(handler.NewWeKnoraCloudHandler))
