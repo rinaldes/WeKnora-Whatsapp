@@ -7,11 +7,12 @@ import (
 )
 
 func TestLocalizeCoreNotice(t *testing.T) {
-	for zh, en := range coreNotices {
+	for zh, n := range coreNotices {
 		for _, tt := range []struct{ locale, want string }{
-			{"", en},
-			{"en-US", en},
-			{"ja-JP", en}, // no translation yet: English
+			{"", n.en},
+			{"en-US", n.en},
+			{"ja-JP", n.en}, // no translation yet: English
+			{"id-ID", n.id},
 			{"zh-CN", zh},
 			{"zh-TW", zh},
 		} {
@@ -30,6 +31,10 @@ func TestLocalizeCoreNoticePatterns(t *testing.T) {
 	if got := localizeCoreNotice("未知指令 `foo`，发送 `/help` 查看所有可用指令。", "en-US"); got !=
 		"Unknown command `foo`. Send `/help` to see all commands." {
 		t.Fatalf("unknown command = %q", got)
+	}
+	if got := localizeCoreNotice("未知指令 `foo`，发送 `/help` 查看所有可用指令。", "id-ID"); got !=
+		"Perintah `foo` tidak dikenal. Kirim `/help` untuk melihat semua perintah." {
+		t.Fatalf("unknown command (id-ID) = %q", got)
 	}
 	if got := localizeCoreNotice("收到，前面还有 3 条消息在处理，请稍候 ⏳", "zh-CN"); !strings.HasPrefix(got, "收到") {
 		t.Fatalf("zh-CN changed: %q", got)

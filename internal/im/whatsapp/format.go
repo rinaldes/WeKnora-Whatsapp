@@ -144,7 +144,8 @@ func Chunk(text string, limit int) []string {
 			sep = "\n\n"
 		}
 		if runeLen(cur.String())+runeLen(sep)+runeLen(block) <= limit {
-			cur.WriteString(sep + block)
+			cur.WriteString(sep)
+			cur.WriteString(block)
 			return
 		}
 		flush()

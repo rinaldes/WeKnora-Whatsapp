@@ -355,7 +355,7 @@ export interface IMChannel {
   enabled: boolean;
   mode: 'webhook' | 'websocket' | 'longpoll';
   output_mode: 'stream' | 'full';
-  locale?: '' | 'zh-CN' | 'zh-TW' | 'en-US' | 'ko-KR' | 'ja-JP' | 'ru-RU';
+  locale?: '' | 'zh-CN' | 'zh-TW' | 'en-US' | 'ko-KR' | 'ja-JP' | 'ru-RU' | 'id-ID';
   session_mode?: 'user' | 'thread';
   knowledge_base_id?: string;
   credentials: Record<string, any>;
