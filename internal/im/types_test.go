@@ -246,3 +246,16 @@ func TestChannelSessionThreadIDField(t *testing.T) {
 		t.Errorf("ThreadID = %q, want empty", csUser.ThreadID)
 	}
 }
+
+func TestComputeBotIdentity_WhatsAppUsesNumber(t *testing.T) {
+	for creds, want := range map[string]string{
+		`{"device_jid":"6281234567890:12@s.whatsapp.net"}`: "whatsapp:6281234567890",
+		`{"device_jid":"6281234567890@s.whatsapp.net"}`:    "whatsapp:6281234567890",
+		`{"owner_number":"6281111111111"}`:                 "",
+	} {
+		ch := &IMChannel{Platform: "whatsapp", Credentials: []byte(creds)}
+		if got := ch.computeBotIdentity(); got != want {
+			t.Errorf("identity(%s) = %q, want %q", creds, got, want)
+		}
+	}
+}

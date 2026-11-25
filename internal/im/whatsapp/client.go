@@ -1,0 +1,40 @@
+package whatsapp
+
+import (
+	"context"
+	"time"
+
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
+)
+
+// waClient is the part of *whatsmeow.Client the adapter uses. Only the
+// factory touches the concrete client, so tests run against a fake.
+type waClient interface {
+	GenerateMessageID() types.MessageID
+	SendMessage(ctx context.Context, to types.JID, msg *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
+	SendChatPresence(ctx context.Context, jid types.JID, state types.ChatPresence, media types.ChatPresenceMedia) error
+	SendPresence(ctx context.Context, state types.Presence) error
+	MarkRead(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptTypeExtra ...types.ReceiptType) error
+	Download(ctx context.Context, msg whatsmeow.DownloadableMessage) ([]byte, error)
+	// PNForLID looks up the phone-number JID for a LID; empty when unknown.
+	PNForLID(ctx context.Context, lid types.JID) (types.JID, error)
+	// OwnLID is the bot's own LID; empty when not known yet.
+	OwnLID() types.JID
+}
+
+// whatsmeowClient adds the store lookups the adapter needs to *whatsmeow.Client.
+type whatsmeowClient struct {
+	*whatsmeow.Client
+}
+
+var _ waClient = whatsmeowClient{}
+
+func (c whatsmeowClient) PNForLID(ctx context.Context, lid types.JID) (types.JID, error) {
+	return c.Store.LIDs.GetPNForLID(ctx, lid)
+}
+
+func (c whatsmeowClient) OwnLID() types.JID {
+	return c.Store.GetLID()
+}

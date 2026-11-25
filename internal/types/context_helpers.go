@@ -445,6 +445,8 @@ func LanguageLocaleName(locale string) string {
 		return "Japanese"
 	case "ru-RU", "ru":
 		return "Russian"
+	case "id-ID", "id":
+		return "Indonesian"
 	case "fr-FR", "fr":
 		return "French"
 	case "de-DE", "de":
